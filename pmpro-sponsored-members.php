@@ -794,7 +794,9 @@ function pmprosm_pmpro_checkout_boxes()
 	elseif(!empty($current_user->ID))
 		$seats = get_user_meta($current_user->ID, "pmprosm_seats", true);
 	else
-		$seats = "";			
+		$seats = "";
+
+	$sponsored_level = pmpro_getLevel($pmprosm_values['sponsored_level_id']);
 	?>
 	<div id="pmpro_extra_seats" class="pmpro_checkout">
 		<hr />
@@ -949,7 +951,8 @@ function pmprosm_pmpro_checkout_boxes()
 							<input type="password" name="add_sub_accounts_password[]" value="" size="20" />
 						<?php } ?>
 						<?php do_action('pmprosm_children_fields', $i, $seats);?>
-					</div>
+						<?php do_action('pmprosm_register_helper_child_fields', $i);?>
+                    </div>
 					<?php
 					}									
 
@@ -960,10 +963,28 @@ function pmprosm_pmpro_checkout_boxes()
 					*/
 					ob_start();
 					do_action("pmprosm_children_fields", false, $seats);
-					$empty_child_fields = ob_get_contents();
+					do_action('pmprosm_register_helper_child_fields', 'XXXX');
+                    $empty_child_fields = ob_get_contents();
 					ob_end_clean();
+
+					$dom = new DOMDocument();
+					$dom->loadHTML($empty_child_fields, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
+					$scriptNodes = $dom->getElementsByTagName('script');
+					$scripts=array();
+					$removeList = array();
+					foreach ($scriptNodes as $scriptNode) {
+						$removeList[] = $scriptNode;
+					}
+					foreach ($removeList as $Element) {
+						$scripts[] = $Element->nodeValue;
+						$Element->parentNode->removeChild($Element);
+					}
+					$empty_child_fields = $dom->saveHTML();
 					//also clean it up a bit
-					$empty_child_fields = str_replace("\n", "", $empty_child_fields);
+					$empty_child_scripts = implode(" " ,$scripts);
+					$empty_child_fields = str_replace(array("\n","\t","\r"), "", $empty_child_fields);
+					$empty_child_scripts = str_replace(array("\n","\t","\r"), "", $empty_child_scripts);
+
 				}	//if(!empty($pmprosm_values['sponsored_accounts_at_checkout']))					
 				?>
 
@@ -1033,8 +1054,19 @@ function pmprosm_pmpro_checkout_boxes()
 									i = children.length;
 
 									while (i < newseats)
-									{																
-										jQuery('#sponsored_accounts').append('<div id = "sponsored_account_'+i+'"><hr /><?php if(!empty($pmprosm_values["children_get_name"])) { ?><label>First Name</label><input type="text" name="add_sub_accounts_first_name[]" value="" size="20" /><br><label>Last Name</label><input type="text" name="add_sub_accounts_last_name[]" value="" size="20" /><br><?php } ?><?php if(empty($pmprosm_values["children_hide_username"])) { ?><label>Username</label><input type="text" name="add_sub_accounts_username[]" value="" size="20" /><br><?php } ?><label>Email</label><input type="text" name="add_sub_accounts_email[]" value"" size="20" /><br><label>Password</label><input type="password" name="add_sub_accounts_password[]" value="" size="20" /><?php echo $empty_child_fields;?></div>');
+									{
+									    // TODO need to find a better way to build div from html above
+                                        var div = '<div id="sponsored_account_'+i+'"><hr /><div><h3><?php echo $sponsored_level->name; _e(" account information # XXXX", "pmprosm"); ?> </h3><h4><?php if (isset($pmprosm_values["sponsored_header_text"]))echo $pmprosm_values["sponsored_header_text"];else _e("Please fill in following information and account(s) will be created.", "pmprosm");?></h4></div><?php if(!empty($pmprosm_values["children_get_name"])) { ?><label>First Name</label><input type="text" name="add_sub_accounts_first_name[]" value="" size="20" /><br><label>Last Name</label><input type="text" name="add_sub_accounts_last_name[]" value="" size="20" /><br><?php } ?><?php if(empty($pmprosm_values["children_hide_username"])){ ?><label>Username</label><input type="text" name="add_sub_accounts_username[]" value="" size="20" /><br><?php } ?><label>Email</label><input type="text" name="add_sub_accounts_email[]" value"" size="20" /><br><label>Password</label><input type="password" name="add_sub_accounts_password[]" value="" size="20" /><?php echo $empty_child_fields;?></div>';
+                                        //TODO register_helper
+                                        newdiv = div.replace(/XXXX/g,i);
+                                        jQuery('#sponsored_accounts').append(newdiv);
+                                        // sponsored children need to be uniquely identified.
+                                        // register helpers add scripts so capture this and add correctly
+                                        var addscripts = '<?php echo addslashes($empty_child_scripts); ?>';
+                                        newscripts = addscripts.replace(/XXXX/g,i);
+
+                                        jQuery('#sponsored_accounts').append('<script>'+newscripts+'<\/script>');
+
 										i++;
 									}
 								}
@@ -1539,17 +1571,21 @@ function pmprosm_profile_fields_seats($user)
 						foreach($member_ids as $member_id)
 						{
 							$member = get_userdata($member_id);
-							$member->membership_level = pmpro_getMembershipLevelForUser($member_id);
-							if(empty($member)) {
-								continue;
+							if ($member !== false) {  // make sure member is valid
+								$member->membership_level = pmpro_getMembershipLevelForUser( $member_id );
+								if ( empty( $member ) ) {
+									continue;
+								}
+								?>
+                                <tr<?php if ( $count ++ % 2 == 1 ) { ?> class="alternate"<?php } ?>>
+                                    <td><?php echo date( get_option( "date_format" ), $member->membership_level->startdate ); ?></td>
+                                    <td>
+                                        <a href="<?php echo get_edit_user_link( $member_id ); ?>"><?php echo $member->display_name; ?></a>
+                                    </td>
+                                    <td><?php echo $member->membership_level->name; ?></td>
+                                </tr>
+								<?php
 							}
-							?>
-							<tr<?php if($count++ % 2 == 1) { ?> class="alternate"<?php } ?>>
-								<td><?php echo date(get_option("date_format"), $member->membership_level->startdate); ?></td>
-								<td><a href="<?php echo get_edit_user_link($member_id); ?>"><?php echo $member->display_name; ?></a></td>
-								<td><?php echo $member->membership_level->name; ?></td>
-							</tr>
-							<?php
 						}
 					?>
 				</tbody>
